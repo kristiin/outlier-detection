@@ -19,7 +19,6 @@ extractOutliers <- function( data, minPoints, minCoher=0.7, k=2, rejCrit=3, minJ
   additionalPoints <- processOCs( pointsWithOCFlag, madOfVariablePerClusterDF, parameters )
   pointsToKeep <- rbind(outlierAndNoiseFree, noiseToBeIncluded, additionalPoints)
 
-
   nonoutliers <- data[data$ID %in% row.names(pointsToKeep),]
   outliers <- data[!data$ID %in% row.names(pointsToKeep),]
 
@@ -34,7 +33,7 @@ prepareData <- function( data ){
   row.names(inData) <- data$ID
   xyCoords <- inData[,c("LON","LAT")]
   sp.dat <- sp::SpatialPointsDataFrame(xyCoords, inData, proj4string = sp::CRS("+proj=longlat +datum=WGS84"))
-  sp.dat <- sp::spTransform(sp.dat, sp::CRS("+init=epsg:3857")) #epsg:3301
+  sp.dat <- sp::spTransform(sp.dat, sp::CRS("+init=epsg:3857"))
   return (as.data.frame(sp.dat))
 }
 
@@ -64,13 +63,13 @@ applyPCA <- function( data, parameters ){
 #TODO make columns dynamic
   variables <- dplyr::select(data,HEIGHT,HEIGHT.WRT.DEM,SIGMA.HEIGHT,VEL,SIGMA.VEL,CUM.DISP,COHER)
   varMatrix <- as.matrix(variables)
-  aR = rospca::robpca(varMatrix, k=2, ndir=5000)
-  isCore = aR[["flag.all"]]
+  aR = rrcov::PcaHubert(x=varMatrix, k=parameters$k, mcd=FALSE)
+  isCore = aR@flag
   return(cbind(data, isCore, deparse.level = 1))
 }
 
 getOCFreeData <- function( data ){
-  return ( data[data$isCore == TRUE & data$cluster != 0,] )
+  return ( data[data$isCore == TRUE, ] )
 }
 #Get all pca which are not noise in dbscan
 removeNoisePoints <- function( data ){
@@ -89,16 +88,15 @@ getNoiseWithCoherLimit <- function( data, parameters ){
 #minJacc: index threshold default 0.6
 processOCs <- function( pointsWithOCFlag, madOfVariablesPerClusterDF, parameters ){
   noiseFreeOutlierCandidates <- removeNoisePoints(pointsWithOCFlag)
-
   triang <- applyTriangulation( noiseFreeOutlierCandidates, parameters )
   delsgsOfGroupedOC <- triang$delsgs[triang$delsgs$dist<=parameters$eps,]
   groupedOCstoKeep <- processGroupedOutliers( noiseFreeOutlierCandidates, delsgsOfGroupedOC, madOfVariablesPerClusterDF, parameters )
 
   indsWithneighbors <- getIndsWithNeighbors(delsgsOfGroupedOC)
+
   indsOfIsolatedOutliers <- getIndsOfIsolatedOutliers( triang$ind.orig, indsWithneighbors ) #process isolated outliers
 
   isolatedOCstoKeep <- processIsolatedOutliers( noiseFreeOutlierCandidates, indsOfIsolatedOutliers, madOfVariablesPerClusterDF, parameters )
-
   return (rbind(groupedOCstoKeep,isolatedOCstoKeep))
   }
 
@@ -120,9 +118,6 @@ processIsolatedOutliers <- function( noiseFreeOutlierCandidates, indsOfIsolatedO
 #returns df with neighboring points and their distance
 #TODO errors
 applyTriangulation <- function( data, parameters ){
-  xy <- data[,c("LON","LAT")]
-  spdf <- sp::SpatialPointsDataFrame(coords = xy, data = data,
-                                 proj4string = sp::CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")) #
   # Voronoi
   triang <- deldir::deldir(data$LON.1, data$LAT.1 , digits=18) #aka triangulation
   triang$delsgs$dist <- raster::pointDistance(cbind(triang$delsgs$x1, triang$delsgs$y1),cbind(triang$delsgs$x2, triang$delsgs$y2), lonlat=FALSE)

@@ -14,7 +14,7 @@ Imports:
     raster,
     deldir,
     igraph,
-    rospca,
+    rrcov,
     sp,
     rgdal,
     inflection
