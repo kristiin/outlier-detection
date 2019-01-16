@@ -59,7 +59,6 @@ validate <- function(params){
 
 getClusters <- function( data, minPoints=3, eps=NULL, utm=NULL, minCoher=0.7 ){
   params <- as.list(environment())
-  validate(params)
   params$data <- NULL
   allData <- prepareData(data, params)
   return(getDbscan( allData, params ) )
@@ -250,7 +249,7 @@ getClustersWithMajorityOutliers <- function(data){
   return( e[e$falseSum > e$trueSum,]$cluster )
 }
 
-calculateMatrixPerOc <- function(noiseFreeOutlierCandidates, ocInds, madOfVariablePerClusterDF, params ){ #viga, kui clusterid ei ole samad
+calculateMatrixPerOc <- function(noiseFreeOutlierCandidates, ocInds, madOfVariablePerClusterDF, params ){
   ocInds <- as.integer(ocInds)
   cluster <-  noiseFreeOutlierCandidates[ocInds[1],]$cluster
   madValues <- madOfVariablePerClusterDF[madOfVariablePerClusterDF$cluster == cluster, -1]
