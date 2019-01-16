@@ -4,61 +4,62 @@ extractOutliers <- function( data, minPoints=3, eps=NULL, utm=NULL, minCoher=0.7
   params$data <- NULL
   origColumnNames <- colnames(data)
   params$variables <- origColumnNames[4:length(colnames(data))]
-
+  
   allData <- prepareData(data, params)
-
+  
   #Location based
   dbscan <- getDbscan( allData, params )
-
+  
   params$eps <- dbscan$eps
   groupCluster <- as.integer(names(which.max(table(dbscan$cluster))))
   dataWithCluster <- bindClusterToData(dbscan, allData)
-
+  
   #Data-driven
   pointsWithOCFlag <- applyPCA( dataWithCluster, params ) #points with oc flag; k no of components
   outlierAndNoiseFree <- getOCFreeData( pointsWithOCFlag ) #points to be included in final dataset and found by PCA
   noiseToBeIncluded <- getNoiseWithCoherLimit(pointsWithOCFlag, params)
-
+  
   #Application-driven
   madOfVariablePerClusterDF <- calculateMadOfVariablePerCluster( pointsWithOCFlag, dbscan, params )
   additionalPoints <- processOCs( pointsWithOCFlag, madOfVariablePerClusterDF, params )
-
+  
   pointsToKeep <- rbind(outlierAndNoiseFree, noiseToBeIncluded, additionalPoints)
-
+  
   nonoutliers <- data[data$ID %in% row.names(pointsToKeep),]
   outliers <- data[!data$ID %in% row.names(pointsToKeep),]
-
-  x <- list(nonoutliers = pointsToKeep, outliers = outliers,params = params)
-
+  
+  x <- list(nonoutliers = nonoutliers, outliers = outliers, params = params, pointsWithOCFlag = pointsWithOCFlag, additionalPoints = additionalPoints)
+  
   return (x)
 }
 
 validate <- function(params){
   if (colnames(params$data)[1] != "ID" || colnames(params$data)[2] != "LAT" || colnames(params$data)[3] != "LON") stop("First columns must be ID,LAT,LON")
-
+  
   cols <- unlist(colnames(params$data))
   if(length(cols[cols=="COHER"])!=1) stop("Missing column COHER")
-
+  
   nums <- unlist(lapply(params$data, is.numeric))
   if(length(nums[nums==FALSE])>0) stop("All variables must be numeric")
-
+  
   params$data <- NULL
   if (!is.numeric(unlist(params))) stop("All parameters must be numeric")
-
+  
   if (!dplyr::between(params$minCoher,0,1)) stop("Coherence value has to be between 0 and 1")
-
+  
   if (!dplyr::between(params$minJacc,0,1)) stop("Jaccard index value has to be between 0 and 1")
-
+  
   if (!dplyr::between(params$cl,0,1)) stop("Confidence level for PCA has to be between 0 and 1")
-
+  
   if (!dplyr::between(params$utm,1,60)) stop("UTM zone has to be between 1 and 60")
-
+  
   if (params$minPoints<1) stop("MinPoints has to be at least 1")
-
+  
 }
 
 getClusters <- function( data, minPoints=3, eps=NULL, utm=NULL, minCoher=0.7 ){
   params <- as.list(environment())
+  validate(params)
   params$data <- NULL
   allData <- prepareData(data, params)
   return(getDbscan( allData, params ) )
@@ -75,7 +76,7 @@ prepareData <- function( data, params ){
   else {
     crs <- paste("+proj=utm +zone=",params$utm," ellps=WGS84", sep="")
   }
-
+  
   sp.dat <- sp::spTransform(sp.dat, sp::CRS(crs))
   return (as.data.frame(sp.dat))
 }
@@ -83,7 +84,7 @@ prepareData <- function( data, params ){
 getDbscan <- function( data, params ){
   allCoords <- data[,c("LON.1", "LAT.1")]
   eps <- ifelse(is.null(params$eps),calculateEps(allCoords,params$minPoints),params$eps)
-
+  
   return (dbscan::dbscan(allCoords, eps, params$minPoints))
 }
 
@@ -107,7 +108,7 @@ applyPCA <- function( data, params ){
   variables <- data[,params$variables]
   varMatrix <- as.matrix(variables)
   aR = rrcov::PcaHubert(x=varMatrix, k=params$k, mcd=FALSE, crit.pca.distances = params$cl)
-
+  
   ISCORE = aR@flag
   return(cbind(data, ISCORE, deparse.level = 1))
 }
@@ -238,12 +239,12 @@ getClustersWithMajorityOutliers <- function(data){
   countNegByCluster <- neg %>%
     dplyr::group_by(cluster) %>%
     dplyr::summarise(falseSum=n() )
-
+  
   pos <- data[data$cluster!=0 & data$ISCORE==TRUE,]
   countPosByCluster <- pos %>%
     dplyr::group_by(cluster) %>%
     dplyr::summarise(trueSum=n() )
-
+  
   e <- dplyr::full_join(countPosByCluster,countNegByCluster, by="cluster")
   e <- e  %>% dplyr::mutate_all(funs(replace(., which(is.na(.)), 0)))
   return( e[e$falseSum > e$trueSum,]$cluster )
